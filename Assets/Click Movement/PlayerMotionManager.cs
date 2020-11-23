@@ -118,7 +118,9 @@ public class PlayerMotionManager : MonoBehaviourPunCallbacks, IPlayerEventsListe
 
         currentMotion = Motion.FromPropertyCollection((Dictionary<string, object>)changedProps[Motion.MotionPropertyCollection]);
 
-        transform.position = currentMotion.StartLocation;
+        if(Vector3.Distance(currentMotion.StartLocation, transform.position) > 0.2f)
+            transform.position = currentMotion.StartLocation;
+
         this.agent.SetDestination(currentMotion.Destination);
         updatePosition = true;
 
