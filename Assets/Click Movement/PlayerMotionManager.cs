@@ -1,6 +1,8 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 using Photon.Pun;
+using System.Linq;
 
 public class Motion
 {
@@ -44,17 +46,42 @@ public class PlayerMotionManager : MonoBehaviourPunCallbacks, IPlayerEventsListe
 {
     [SerializeField]
     private PhotonView ownerView;
-    
-    private Motion activeMotion; 
 
-    private float movingSpeedPerSecond = 1;
-
-    private float playerLocationUpdateFrequency = 0.02f; 
+    private NavMeshAgent agent;
     
+    [SerializeField]
+    private float jumpTimeIgnore = 0.3f;
+
+    private Motion currentMotion;
+
+    private bool updatePosition;
+
     private void Start()
     {
+        this.agent = GetComponent<NavMeshAgent>();
         this.SubscribeToEvents();
-        this.InvokeRepeating(nameof(this.UpdatePlayerLocation), 1, this.playerLocationUpdateFrequency);
+    }
+
+    private void Update()
+    {
+        // This is required due to how nav mesh paths are calculated
+        if(updatePosition && !agent.pathPending)
+        {
+            updatePosition = false;
+
+            var networkLag = (PhotonNetwork.ServerTimestamp - currentMotion.StartTimeStamp) / 1000f;
+
+            // Lerps position based on network lag using jumpTimeIgnore
+            if (networkLag > jumpTimeIgnore)
+            {
+                var totalTripTime = PathLength(agent.path.corners) / agent.speed;
+                var step = networkLag / totalTripTime;
+                var syncedPosition = ArrayLerp(agent.path.corners, step);
+
+                this.agent.Warp(syncedPosition);
+                this.agent.SetDestination(currentMotion.Destination);
+            }
+        }
     }
 
     private void SubscribeToEvents()
@@ -69,7 +96,6 @@ public class PlayerMotionManager : MonoBehaviourPunCallbacks, IPlayerEventsListe
         }
     }
     
-
     private void OnLeftMouseClicked(Vector3 pressLocation)
     {
         this.SetNetworkMotion(pressLocation);
@@ -85,49 +111,72 @@ public class PlayerMotionManager : MonoBehaviourPunCallbacks, IPlayerEventsListe
         PhotonNetwork.LocalPlayer.SetCustomProperties(setValue);
     }
    
-    private void UpdatePlayerLocation()
-    {       
-        if (this.activeMotion == null)
-        {
-            return;
-        }
-
-        this.transform.position = Vector3.MoveTowards(this.transform.position, this.activeMotion.Destination, playerLocationUpdateFrequency * movingSpeedPerSecond);
-        
-        var acceceptedDistanceToArrive = 0.001;
-        if(Vector3.Distance(this.transform.position, this.activeMotion.Destination) < acceceptedDistanceToArrive)
-        {
-            Debug.Log("Motion ended");
-            this.activeMotion = null;
-        }
-    }
-    
     public bool OnPlayerPropertiesUpdated(ExitGames.Client.Photon.Hashtable changedProps)
     {
         if (!changedProps.ContainsKey(Motion.MotionPropertyCollection))
-        {
             return false;
-        }
 
-        var motion = Motion.FromPropertyCollection((Dictionary<string, object>)changedProps[Motion.MotionPropertyCollection]);
-        activeMotion = motion;
+        currentMotion = Motion.FromPropertyCollection((Dictionary<string, object>)changedProps[Motion.MotionPropertyCollection]);
 
-        // Lerp fast or so to start Location
-        this.transform.position = motion.StartLocation;
-
-        var timeInSecondsSinceMotionStarted = (PhotonNetwork.ServerTimestamp - motion.StartTimeStamp) / 1000f;
-        var totalDistance = Vector3.Distance(motion.StartLocation, motion.Destination);
-        var totalTripTime = totalDistance / movingSpeedPerSecond;
-
-        var acceptedTreshold = 0.02;
-        if (timeInSecondsSinceMotionStarted > acceptedTreshold)
-        {
-            var distanceCovered = (timeInSecondsSinceMotionStarted / totalTripTime) * totalDistance;
-            var syncedPosition = Vector3.MoveTowards(motion.StartLocation, motion.Destination, distanceCovered);
-
-            this.transform.position = syncedPosition;
-        }
+        transform.position = currentMotion.StartLocation;
+        this.agent.SetDestination(currentMotion.Destination);
+        updatePosition = true;
 
         return true;
     }
+
+    #region Static Methods
+    public static float PathLength(Vector3[] positions)
+    {
+        float length = 0.0f;
+
+        for (int i = 1; i < positions.Length; i++)
+        {
+            length += Vector3.Distance(positions[i], positions[i - 1]);
+        }
+
+        return length;
+    }
+
+    /// <summary>
+    /// Lerps the position using any number of positions.
+    /// </summary>
+    /// <param name="positions">A list of positions to check through</param>
+    /// <param name="step">The interpolation step between the first and last array point, using point in-between.</param>
+    /// <returns></returns>
+    public static Vector3 ArrayLerp(Vector3[] positions, float step)
+    {
+        if (step <= 0.0f) 
+            return positions[0];
+        if (step >= 1.0f) 
+            return positions[positions.Length - 1];
+
+        float length = 0.0f;
+
+        for (int i = 1; i < positions.Length; i++)
+        {
+            length += Vector3.Distance(positions[i], positions[i - 1]);
+        }
+
+        float distanceStep = length * step;
+        float cumulativeDistance = 0.0f;
+        float distanceBetweenPoints;
+
+        for (int i = 1; i < positions.Length; i++)
+        {
+            distanceBetweenPoints = cumulativeDistance + Vector3.Distance(positions[i], positions[i - 1]);
+
+            if (distanceStep < cumulativeDistance + distanceBetweenPoints)
+            {
+                step = (distanceStep - cumulativeDistance) / distanceBetweenPoints;
+
+                return Vector3.Lerp(positions[i - 1], positions[i], step);
+            }
+
+            cumulativeDistance += distanceBetweenPoints;
+        }
+
+        return positions[positions.Length - 1];
+    }
+    #endregion
 }

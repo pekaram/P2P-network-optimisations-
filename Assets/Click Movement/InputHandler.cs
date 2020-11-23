@@ -10,6 +10,7 @@ public class InputHandler : MonoBehaviour
     private Transform movementPlane;
 
     public event Action<Vector3> OnLeftMouseClicked;
+    public LayerMask movementLayer;
 
     private Camera mainCamera;
 
@@ -18,17 +19,16 @@ public class InputHandler : MonoBehaviour
         this.mainCamera = Camera.main;
     }
 
-    public void FixedUpdate()
+    public void Update()
     {
         if(Input.GetKeyDown(KeyCode.Mouse0))
         {
-            Plane plane = new Plane(Vector3.up, movementPlane.position);
             Ray ray = this.mainCamera.ScreenPointToRay(Input.mousePosition);
-            float point = 0f;
+            RaycastHit info; 
 
-            if (plane.Raycast(ray, out point))
+            if (Physics.Raycast(ray, out info, float.PositiveInfinity, movementLayer))
             {
-                OnLeftMouseClicked?.Invoke(ray.GetPoint(point));
+                OnLeftMouseClicked?.Invoke(info.point);
             }
         }
     }
