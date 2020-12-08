@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.AI;
 using Photon.Pun;
 using System.Linq;
+using System;
 
 public class Motion
 {
@@ -56,6 +57,8 @@ public class PlayerMotionManager : MonoBehaviourPunCallbacks, IPlayerEventsListe
 
     private bool updatePosition;
 
+    public event Action OnMoveStarted;
+
     private void Start()
     {
         this.agent = GetComponent<NavMeshAgent>();
@@ -71,6 +74,24 @@ public class PlayerMotionManager : MonoBehaviourPunCallbacks, IPlayerEventsListe
 
             var networkLag = (PhotonNetwork.ServerTimestamp - currentMotion.StartTimeStamp) / 1000f;
 
+            var navAnim = GetComponentInChildren<NavAgentAnimation>();
+
+            if (SeatManager.allSeatPositions.Contains(currentMotion.Destination))
+            {
+                navAnim.TargetState = NavAgentAnimation.State.Sitting;
+
+                foreach (var seat in SeatManager.allSeats)
+                    if (seat.navigationPoint.position == currentMotion.Destination)
+                        navAnim.nextSeat = seat;
+
+                if(!SeatManager.OccupySeat(navAnim.nextSeat, ownerView.ViewID))
+                    navAnim.TargetState = NavAgentAnimation.State.Moving;
+            }
+            else
+            {
+                navAnim.TargetState = NavAgentAnimation.State.Moving;
+            }
+
             // Lerps position based on network lag using jumpTimeIgnore
             if (networkLag > jumpTimeIgnore)
             {
@@ -81,6 +102,8 @@ public class PlayerMotionManager : MonoBehaviourPunCallbacks, IPlayerEventsListe
                 this.agent.Warp(syncedPosition);
                 this.agent.SetDestination(currentMotion.Destination);
             }
+
+            OnMoveStarted?.Invoke();
         }
     }
 

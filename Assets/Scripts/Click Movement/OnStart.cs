@@ -18,7 +18,7 @@ public class OnStart : MonoBehaviourPunCallbacks
     
     public override void OnConnectedToMaster()
     {
-        PhotonNetwork.JoinOrCreateRoom("AnyRoomName", new RoomOptions { IsOpen = true, IsVisible = true, EmptyRoomTtl = 30000, BroadcastPropsChangeToAll = true }, TypedLobby.Default);
+        PhotonNetwork.JoinOrCreateRoom("AnyRoomName", new RoomOptions { IsOpen = true, IsVisible = true, EmptyRoomTtl = 0, BroadcastPropsChangeToAll = true }, TypedLobby.Default);
     }
     
     public override void OnJoinedRoom()
